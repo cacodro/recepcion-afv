@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Recepción AFV</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  :root{
+    --bg:#f5f5f4; --card:#fff; --border:#ddd; --text:#222; --muted:#666;
+    --accent:#2563eb; --danger:#dc2626; --success:#16a34a; --warning:#d97706;
+  }
+  *{box-sizing:border-box;}
+  body{font-family:system-ui,Arial,sans-serif;background:var(--bg);color:var(--text);margin:0;}
+  .hidden{display:none !important;}
+  #login-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:16px;text-align:center;padding:20px;}
+  #login-screen h1{font-size:22px;margin:0;}
+  #login-screen p{color:var(--muted);max-width:420px;font-size:14px;}
+  header{display:flex;justify-content:space-between;align-items:center;padding:12px 20px;background:var(--card);border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px;}
+  header h1{font-size:16px;margin:0;font-weight:600;}
+  header .userbox{display:flex;align-items:center;gap:12px;font-size:13px;color:var(--muted);}
+  nav.tabs{display:flex;gap:2px;padding:0 20px;background:var(--card);border-bottom:1px solid var(--border);overflow-x:auto;}
+  nav.tabs button{padding:10px 14px;border:none;background:none;cursor:pointer;font-size:13px;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap;}
+  nav.tabs button.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600;}
+  main{padding:20px;max-width:1200px;margin:0 auto;}
+  section.tab{display:none;}
+  section.tab.active{display:block;}
+  table{width:100%;border-collapse:collapse;background:var(--card);}
+  th,td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:left;font-size:13px;}
+  th{background:#fafaf9;font-weight:600;}
+  .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;white-space:nowrap;}
+  .badge.recepcion{background:#dbeafe;color:#1e40af;}
+  .badge.revision{background:#fef3c7;color:#92400e;}
+  .badge.ingreso{background:#e0e7ff;color:#3730a3;}
+  .badge.guardado{background:#dcfce7;color:#166534;}
+  .badge.diferencia{background:#fee2e2;color:#991b1b;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px;}
+  label{display:block;font-size:13px;margin:10px 0 4px;color:var(--muted);}
+  input,select,textarea{width:100%;padding:8px;border:1px solid var(--border);border-radius:4px;font-size:14px;}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+  button.btn{padding:8px 14px;border:none;border-radius:4px;background:var(--accent);color:#fff;cursor:pointer;font-size:13px;margin:2px 4px 2px 0;}
+  button.btn.secondary{background:#e5e5e5;color:#222;}
+  button.btn.danger{background:var(--danger);color:#fff;}
+  .kpi-grid{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;}
+  .kpi-card{flex:1;min-width:140px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px;text-align:center;}
+  .kpi-card .num{font-size:26px;font-weight:700;}
+  .kpi-card .lbl{font-size:11px;color:var(--muted);}
+  .filtro-row{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;}
+  .filtro-row select{width:auto;}
+  .sync-status{font-size:11px;color:var(--muted);}
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:50;}
+  .modal{background:var(--card);border-radius:8px;padding:20px;max-width:480px;width:90%;max-height:80vh;overflow:auto;}
+  .modal h3{margin-top:0;}
+  .tag{display:inline-flex;align-items:center;gap:6px;background:#eee;border-radius:12px;padding:4px 10px;font-size:12px;margin:2px;}
+  .bar-row{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px;}
+  .bar-track{flex:1;background:#eee;border-radius:4px;height:14px;overflow:hidden;}
+  .bar-fill{height:100%;background:var(--accent);}
+  .hist-item{border-left:2px solid var(--border);padding:4px 0 4px 10px;margin-bottom:6px;font-size:12px;}
+  .hist-item .meta{color:var(--muted);}
+  .empty{color:var(--muted);font-size:13px;padding:20px;text-align:center;}
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <h1>Recepción AFV</h1>
+  <p>Control minuto a minuto de la recepción de mercadería. Inicia sesión con tu cuenta de Google para ver y registrar cambios en tiempo real junto al resto del equipo.</p>
+  <button class="btn" id="btn-login" onclick="onSignInClick()">Iniciar sesión con Google</button>
+  <p class="sync-status" id="login-error"></p>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <h1>Recepción AFV</h1>
+    <div class="userbox">
+      <span id="sync-status" class="sync-status">Sin conexión</span>
+      <span id="user-email"></span>
+      <button class="btn secondary" onclick="onSignOutClick()">Cerrar sesión</button>
+    </div>
+  </header>
+  <nav class="tabs">
+    <button data-tab="kpis" onclick="switchTab('kpis')">Totalizado / KPIs</button>
+    <button data-tab="cargar" onclick="switchTab('cargar')">Cargar</button>
+    <button data-tab="Recepción" onclick="switchTab('Recepción')">Recepción</button>
+    <button data-tab="Revisión" onclick="switchTab('Revisión')">Revisión</button>
+    <button data-tab="Ingreso" onclick="switchTab('Ingreso')">Ingreso</button>
+    <button data-tab="historial" onclick="switchTab('historial')">Historial</button>
+    <button data-tab="admin" onclick="switchTab('admin')">Administración</button>
+    <button data-tab="stats" onclick="switchTab('stats')">Estadísticas</button>
+  </nav>
+  <main>
+
+    <section id="tab-kpis" class="tab">
+      <div class="kpi-grid" id="kpi-grid"></div>
+      <div class="filtro-row">
+        <label style="margin:0">Filtrar por tipo de ingreso:
+          <select id="filtro-kpis" onchange="renderKPIs()">
+            <option value="Todos">Todos</option>
+          </select>
+        </label>
+      </div>
+      <table>
+        <thead><tr><th>N°</th><th>Tipo</th><th>Cliente AFV</th><th>Estado</th><th>Fecha recepción</th><th>Tiempo en estado</th><th>Diferencia</th></tr></thead>
+        <tbody id="kpi-tbody"></tbody>
+      </table>
+    </section>
+
+    <section id="tab-cargar" class="tab">
+      <div class="card">
+        <h3>Nueva recepción</h3>
+        <form id="form-cargar" onsubmit="return submitCargar(event)">
+          <div class="row2">
+            <div>
+              <label>Tipo de ingreso</label>
+              <select id="f-tipoIngreso" required>
+                <option>Fábrica</option>
+                <option>Importación</option>
+                <option>Devolución</option>
+                <option>Clientes AFV</option>
+              </select>
+            </div>
+            <div>
+              <label>Fecha de recepción</label>
+              <input type="date" id="f-fechaRecepcion" required>
+            </div>
+          </div>
+          <div class="row3">
+            <div>
+              <label>N° de documento</label>
+              <input type="text" id="f-nDocumento" required>
+            </div>
+            <div>
+              <label>Tipo de documento</label>
+              <select id="f-tipoDocumento" required>
+                <option>Guía de despacho</option>
+                <option>Factura</option>
+                <option>Packing list</option>
+              </select>
+            </div>
+            <div>
+              <label>Nacional / Importado</label>
+              <select id="f-nacionalImportado" required>
+                <option>Nacional</option>
+                <option>Importado</option>
+              </select>
+            </div>
+          </div>
+          <div class="row3">
+            <div>
+              <label>Cliente AFV</label>
+              <select id="f-clienteAFV" required></select>
+            </div>
+            <div>
+              <label>Proveedor del cliente</label>
+              <input type="text" id="f-proveedorCliente" list="lista-proveedores">
+              <datalist id="lista-proveedores"></datalist>
+            </div>
+            <div>
+              <label>Pallet o bulto</label>
+              <select id="f-palletBulto" required>
+                <option>Pallet</option>
+                <option>Bulto</option>
+              </select>
+            </div>
+          </div>
+          <div class="row2">
+            <div>
+              <label>Cantidad</label>
+              <input type="number" id="f-cantidad" min="1" required>
+            </div>
+          </div>
+          <button class="btn" type="submit">Cargar recepción</button>
+        </form>
+      </div>
+    </section>
+
+    <section id="tab-Recepción" class="tab etapa-tab" data-etapa="Recepción">
+      <div class="filtro-row">
+        <label style="margin:0">Filtrar por tipo:
+          <select class="filtro-etapa" data-etapa="Recepción" onchange="renderEtapaTab('Recepción')">
+            <option value="Todos">Todos</option>
+          </select>
+        </label>
+      </div>
+      <table>
+        <thead><tr><th>N°</th><th>Tipo</th><th>Cliente AFV</th><th>Documento</th><th>Cantidad</th><th>Tiempo en estado</th><th>Diferencia</th><th>Acciones</th></tr></thead>
+        <tbody id="tbody-Recepción"></tbody>
+      </table>
+    </section>
+
+    <section id="tab-Revisión" class="tab etapa-tab" data-etapa="Revisión">
+      <div class="filtro-row">
+        <label style="margin:0">Filtrar por tipo:
+          <select class="filtro-etapa" data-etapa="Revisión" onchange="renderEtapaTab('Revisión')">
+            <option value="Todos">Todos</option>
+          </select>
+        </label>
+      </div>
+      <table>
+        <thead><tr><th>N°</th><th>Tipo</th><th>Cliente AFV</th><th>Documento</th><th>Cantidad</th><th>Tiempo en estado</th><th>Diferencia</th><th>Acciones</th></tr></thead>
+        <tbody id="tbody-Revisión"></tbody>
+      </table>
+    </section>
+
+    <section id="tab-Ingreso" class="tab etapa-tab" data-etapa="Ingreso">
+      <div class="filtro-row">
+        <label style="margin:0">Filtrar por tipo:
+          <select class="filtro-etapa" data-etapa="Ingreso" onchange="renderEtapaTab('Ingreso')">
+            <option value="Todos">Todos</option>
+          </select>
+        </label>
+      </div>
+      <table>
+        <thead><tr><th>N°</th><th>Tipo</th><th>Cliente AFV</th><th>Documento</th><th>Cantidad</th><th>Tiempo en estado</th><th>Diferencia</th><th>Acciones</th></tr></thead>
+        <tbody id="tbody-Ingreso"></tbody>
+      </table>
+    </section>
+
+    <section id="tab-historial" class="tab">
+      <div class="filtro-row">
+        <label style="margin:0">Filtrar por tipo:
+          <select id="filtro-historial" onchange="renderHistorial()">
+            <option value="Todos">Todos</option>
+          </select>
+        </label>
+      </div>
+      <table>
+        <thead><tr><th>N°</th><th>Tipo</th><th>Cliente AFV</th><th>Fecha recepción</th><th>Guardado el</th><th>Diferencia</th><th></th></tr></thead>
+        <tbody id="tbody-historial"></tbody>
+      </table>
+    </section>
+
+    <section id="tab-admin" class="tab">
+      <div class="card">
+        <h3>Clientes AFV</h3>
+        <div id="lista-clientesAFV"></div>
+        <div class="row2" style="margin-top:10px">
+          <input type="text" id="nuevo-clienteAFV" placeholder="Nuevo cliente AFV">
+          <button class="btn secondary" onclick="agregarClienteAFVUI()">Agregar</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Proveedores</h3>
+        <div id="lista-proveedoresAdmin"></div>
+        <div class="row2" style="margin-top:10px">
+          <input type="text" id="nuevo-proveedor" placeholder="Nuevo proveedor">
+          <button class="btn secondary" onclick="agregarProveedorUI()">Agregar</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-stats" class="tab">
+      <div class="card">
+        <h3>Tiempo promedio por etapa</h3>
+        <div id="stats-tiempos"></div>
+      </div>
+      <div class="card">
+        <h3>Volumen por tipo de ingreso</h3>
+        <div id="stats-volumen"></div>
+      </div>
+      <div class="card">
+        <h3>% de recepciones con diferencias</h3>
+        <div id="stats-diferencias"></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div id="modal-root"></div>
+
+<script>
+// ============================================================
+// CONFIGURACIÓN — completar antes de desplegar (ver guía de despliegue)
+// ============================================================
+const CONFIG = {
+  CLIENT_ID: '870087217258-u834ka1rivf3dsrj1j04l048kuiig5t3.apps.googleusercontent.com',
+  FOLDER_ID: '1xu46BrsJ_LS76yG9UvFYgE98awNlj2iY',
+  DATA_FILE_NAME: 'recepcion_afv_data.json',
+  SCOPES: 'https://www.googleapis.com/auth/drive'
+};
+
+// ============================================================
+// ESTADO GLOBAL
+// ============================================================
+let tokenClient = null;
+let accessToken = null;
+let currentUser = null;
+let dataFileId = null;
+let appData = null;           // copia en memoria de los datos (para pintar la pantalla)
+let dataSnapshotAtLoad = null; // última copia confirmada que vino de Drive
+let syncTimer = null;
+let currentTab = 'kpis';
+const ETAPAS_ACTIVAS = ['Recepción','Revisión','Ingreso'];
+const SIGUIENTE_ETAPA = {'Recepción':'Revisión','Revisión':'Ingreso','Ingreso':'Guardado'};
+
+// ============================================================
+// UTILIDADES
+// ============================================================
+function uuid(){
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c=>{
+    const r = Math.random()*16|0, v = c==='x'?r:(r&0x3|0x8);
+    return v.toString(16);
+  });
+}
+function nowIso(){ return new Date().toISOString(); }
+function deepClone(o){ return JSON.parse(JSON.stringify(o)); }
+function fmtFecha(iso){ return iso ? new Date(iso).toLocaleString('es-CL') : '-'; }
+function escapeHtml(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function setSyncStatus(t){ const el=document.getElementById('sync-status'); if(el) el.textContent=t; }
+function diasEnEstado(rec){
+  const t = rec.timestamps[rec.estado];
+  if(!t) return '-';
+  const horas = (Date.now()-new Date(t).getTime())/3600000;
+  return horas<24 ? horas.toFixed(1)+' h' : (horas/24).toFixed(1)+' d';
+}
+function estructuraInicial(){
+  return {
+    recepciones: [],
+    catalogos: { clientesAFV: ['GID','EH+','Mou1'], proveedores: [] },
+    correlativoActual: 0,
+    ultimaModificacion: nowIso()
+  };
+}
+
+// ============================================================
+// LOGIN CON GOOGLE
+// ============================================================
+window.onload = () => { initGoogle(); };
+
+function initGoogle(){
+  if(!window.google){ setTimeout(initGoogle, 300); return; }
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CONFIG.CLIENT_ID,
+    scope: CONFIG.SCOPES,
+    callback: async (resp) => {
+      if(resp.error){
+        document.getElementById('login-error').textContent = 'Error de autenticación: '+resp.error;
+        return;
+      }
+      accessToken = resp.access_token;
+      await afterLogin();
+    }
+  });
+}
+function onSignInClick(){ tokenClient.requestAccessToken(); }
+function onSignOutClick(){
+  if(accessToken){ google.accounts.oauth2.revoke(accessToken, ()=>{}); }
+  clearInterval(syncTimer);
+  accessToken = null; currentUser = null; appData = null; dataFileId = null;
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('login-screen').classList.remove('hidden');
+}
+async function fetchUserInfo(){
+  const r = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers:{ Authorization:'Bearer '+accessToken } });
+  return r.json();
+}
+async function afterLogin(){
+  currentUser = await fetchUserInfo();
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  document.getElementById('user-email').textContent = currentUser.email;
+  await loadInitialData();
+  switchTab('kpis');
+  syncTimer = setInterval(backgroundSync, 20000);
+}
+
+// ============================================================
+// ACCESO A GOOGLE DRIVE
+// ============================================================
+async function driveFindDataFile(){
+  const q = encodeURIComponent(`name='${CONFIG.DATA_FILE_NAME}' and '${CONFIG.FOLDER_ID}' in parents and trashed=false`);
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)`, { headers:{ Authorization:'Bearer '+accessToken } });
+  const j = await r.json();
+  return (j.files && j.files[0]) ? j.files[0].id : null;
+}
+async function driveCreateFile(name, mimeType, contentBody){
+  const r1 = await fetch('https://www.googleapis.com/drive/v3/files', {
+    method:'POST',
+    headers:{ Authorization:'Bearer '+accessToken, 'Content-Type':'application/json' },
+    body: JSON.stringify({ name, parents:[CONFIG.FOLDER_ID], mimeType })
+  });
+  const meta = await r1.json();
+  if(!r1.ok) throw new Error('No se pudo crear el archivo en Drive: '+(meta.error?meta.error.message:''));
+  await fetch(`https://www.googleapis.com/upload/drive/v3/files/${meta.id}?uploadType=media`, {
+    method:'PATCH',
+    headers:{ Authorization:'Bearer '+accessToken, 'Content-Type':mimeType },
+    body: contentBody
+  });
+  return meta.id;
+}
+async function driveCreateDataFile(){
+  return driveCreateFile(CONFIG.DATA_FILE_NAME, 'application/json', JSON.stringify(estructuraInicial(), null, 2));
+}
+async function driveReadDataFile(fileId){
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, { headers:{ Authorization:'Bearer '+accessToken } });
+  if(!r.ok) throw new Error('No se pudo leer el archivo de datos desde Drive');
+  return r.json();
+}
+async function driveWriteDataFile(fileId, dataObj){
+  const r = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+    method:'PATCH',
+    headers:{ Authorization:'Bearer '+accessToken, 'Content-Type':'application/json' },
+    body: JSON.stringify(dataObj)
+  });
+  if(!r.ok) throw new Error('No se pudo guardar en Drive');
+}
+async function driveGetWebLink(fileId){
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=webViewLink`, { headers:{ Authorization:'Bearer '+accessToken } });
+  const j = await r.json();
+  return j.webViewLink;
+}
+async function driveUploadPhoto(file){
+  const id = await driveCreateFile(`${Date.now()}_${file.name}`, file.type || 'image/jpeg', file);
+  const url = await driveGetWebLink(id);
+  return { id, nombre:file.name, url };
+}
+
+// ============================================================
+// CARGA INICIAL Y SINCRONIZACIÓN EN SEGUNDO PLANO
+// ============================================================
+async function loadInitialData(){
+  setSyncStatus('Conectando con Drive...');
+  dataFileId = await driveFindDataFile();
+  if(!dataFileId){ dataFileId = await driveCreateDataFile(); }
+  appData = await driveReadDataFile(dataFileId);
+  appData.recepciones = appData.recepciones || [];
+  appData.catalogos = appData.catalogos || { clientesAFV:[], proveedores:[] };
+  appData.correlativoActual = appData.correlativoActual || 0;
+  dataSnapshotAtLoad = deepClone(appData);
+  renderAll();
+  setSyncStatus('Sincronizado '+new Date().toLocaleTimeString('es-CL'));
+}
+async function backgroundSync(){
+  try{
+    const fresh = await driveReadDataFile(dataFileId);
+    appData = fresh;
+    dataSnapshotAtLoad = deepClone(fresh);
+    renderAll();
+    setSyncStatus('Sincronizado '+new Date().toLocaleTimeString('es-CL'));
+  }catch(e){
+    setSyncStatus('Error de sincronización, reintentando...');
+  }
+}
+
+// ============================================================
+// GUARDADO CON FUSIÓN DE CAMBIOS (clave para evitar que se pisen los cambios
+// entre varios usuarios) — SIEMPRE relee Drive justo antes de escribir y
+// aplica el cambio puntual sobre esa copia fresca, nunca sobre la copia
+// en memoria del navegador.
+// ============================================================
+async function guardarConCambio(mutator){
+  setSyncStatus('Guardando...');
+  try{
+    const fresh = await driveReadDataFile(dataFileId);
+    fresh.recepciones = fresh.recepciones || [];
+    fresh.catalogos = fresh.catalogos || { clientesAFV:[], proveedores:[] };
+    fresh.correlativoActual = fresh.correlativoActual || 0;
+    mutator(fresh); // aquí también se asigna el correlativo cuando corresponde, sobre el valor recién leído
+    fresh.ultimaModificacion = nowIso();
+    await driveWriteDataFile(dataFileId, fresh);
+    appData = fresh;
+    dataSnapshotAtLoad = deepClone(fresh);
+    renderAll();
+    setSyncStatus('Guardado '+new Date().toLocaleTimeString('es-CL'));
+  }catch(e){
+    console.error(e);
+    setSyncStatus('Error al guardar');
+    alert(e.message || 'No se pudo guardar el cambio. Revisa tu conexión e intenta de nuevo.');
+  }
+}
+
+// ============================================================
+// LÓGICA DE NEGOCIO
+// ============================================================
+function crearRecepcion(form){
+  return guardarConCambio(fresh=>{
+    fresh.correlativoActual = fresh.correlativoActual + 1;
+    const rec = {
+      id: uuid(),
+      correlativo: fresh.correlativoActual,
+      tipoIngreso: form.tipoIngreso,
+      estado: 'Recepción',
+      fechaRecepcion: form.fechaRecepcion,
+      nDocumento: form.nDocumento,
+      tipoDocumento: form.tipoDocumento,
+      nacionalImportado: form.nacionalImportado,
+      clienteAFV: form.clienteAFV,
+      proveedorCliente: form.proveedorCliente,
+      palletBulto: form.palletBulto,
+      cantidad: Number(form.cantidad)||0,
+      tieneDiferencias: false,
+      detalleDiferencias: '',
+      fotos: [],
+      archivada: false,
+      timestamps: { 'Recepción': nowIso(), 'Revisión': null, 'Ingreso': null, 'Guardado': null },
+      historial: [{ fecha: nowIso(), usuario: currentUser.email, accion:'Creado', detalle:`Recepción N° ${fresh.correlativoActual} cargada (${form.tipoIngreso})` }]
+    };
+    fresh.recepciones.push(rec);
+  });
+}
+function avanzarEtapaUI(id, destino){
+  return guardarConCambio(fresh=>{
+    const rec = fresh.recepciones.find(r=>r.id===id);
+    if(!rec) throw new Error('Este registro ya no existe o fue modificado por otra persona. Refresca la página.');
+    if(rec.tieneDiferencias && (!rec.fotos || rec.fotos.length===0)){
+      throw new Error('Este registro tiene diferencias marcadas: adjunta al menos una foto antes de avanzar de etapa.');
+    }
+    rec.estado = destino;
+    rec.timestamps[destino] = nowIso();
+    if(destino==='Guardado') rec.archivada = true;
+    rec.historial.push({ fecha: nowIso(), usuario: currentUser.email, accion:`Avanzó a ${destino}`, detalle:'' });
+  });
+}
+async function guardarDiferenciaUI(id, detalle, archivos){
+  let fotosSubidas = [];
+  if(archivos && archivos.length){
+    setSyncStatus('Subiendo fotos...');
+    for(const f of archivos){ fotosSubidas.push(await driveUploadPhoto(f)); }
+  }
+  return guardarConCambio(fresh=>{
+    const rec = fresh.recepciones.find(r=>r.id===id);
+    if(!rec) throw new Error('Este registro ya no existe o fue modificado por otra persona. Refresca la página.');
+    rec.tieneDiferencias = true;
+    rec.detalleDiferencias = detalle;
+    rec.fotos = (rec.fotos||[]).concat(fotosSubidas);
+    rec.historial.push({ fecha: nowIso(), usuario: currentUser.email, accion:'Diferencia registrada', detalle });
+  });
+}
+function agregarClienteAFVUI(){
+  const input = document.getElementById('nuevo-clienteAFV');
+  const nombre = input.value.trim();
+  if(!nombre) return;
+  guardarConCambio(fresh=>{
+    if(!fresh.catalogos.clientesAFV.includes(nombre)) fresh.catalogos.clientesAFV.push(nombre);
+  }).then(()=>{ input.value=''; });
+}
+function agregarProveedorUI(){
+  const input = document.getElementById('nuevo-proveedor');
+  const nombre = input.value.trim();
+  if(!nombre) return;
+  guardarConCambio(fresh=>{
+    if(!fresh.catalogos.proveedores.includes(nombre)) fresh.catalogos.proveedores.push(nombre);
+  }).then(()=>{ input.value=''; });
+}
+
+// ============================================================
+// NAVEGACIÓN DE PESTAÑAS
+// ============================================================
+function switchTab(tab){
+  currentTab = tab;
+  document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
+  document.querySelectorAll('section.tab').forEach(s=>s.classList.remove('active'));
+  const id = tab==='kpis' ? 'tab-kpis' : tab==='cargar' ? 'tab-cargar' : tab==='historial' ? 'tab-historial' : tab==='admin' ? 'tab-admin' : tab==='stats' ? 'tab-stats' : 'tab-'+tab;
+  const sec = document.getElementById(id);
+  if(sec) sec.classList.add('active');
+  renderAll();
+}
+
+// ============================================================
+// RENDER
+// ============================================================
+function poblarFiltrosTipo(){
+  const tipos = ['Todos','Fábrica','Importación','Devolución','Clientes AFV'];
+  document.querySelectorAll('#filtro-kpis, .filtro-etapa, #filtro-historial').forEach(sel=>{
+    const actual = sel.value || 'Todos';
+    sel.innerHTML = tipos.map(t=>`<option value="${t}">${t}</option>`).join('');
+    sel.value = tipos.includes(actual) ? actual : 'Todos';
+  });
+}
+function poblarCatalogosForm(){
+  if(!appData) return;
+  const selCliente = document.getElementById('f-clienteAFV');
+  const actual = selCliente.value;
+  selCliente.innerHTML = appData.catalogos.clientesAFV.map(c=>`<option>${escapeHtml(c)}</option>`).join('');
+  if(appData.catalogos.clientesAFV.includes(actual)) selCliente.value = actual;
+  document.getElementById('lista-proveedores').innerHTML = appData.catalogos.proveedores.map(p=>`<option value="${escapeHtml(p)}">`).join('');
+}
+function badgeEstado(estado){
+  const map = {'Recepción':'recepcion','Revisión':'revision','Ingreso':'ingreso','Guardado':'guardado'};
+  return `<span class="badge ${map[estado]||''}">${escapeHtml(estado)}</span>`;
+}
+function renderAll(){
+  if(!appData) return;
+  poblarFiltrosTipo();
+  poblarCatalogosForm();
+  renderKPIs();
+  ETAPAS_ACTIVAS.forEach(renderEtapaTab);
+  renderHistorial();
+  renderAdmin();
+  renderEstadisticas();
+}
+function recepcionesActivas(){ return appData.recepciones.filter(r=>!r.archivada); }
+
+function renderKPIs(){
+  const filtro = document.getElementById('filtro-kpis').value || 'Todos';
+  const activas = recepcionesActivas().filter(r=> filtro==='Todos' || r.tipoIngreso===filtro);
+  const porEtapa = {}; ETAPAS_ACTIVAS.forEach(e=> porEtapa[e]=activas.filter(r=>r.estado===e).length);
+  const conDiferencia = activas.filter(r=>r.tieneDiferencias).length;
+  document.getElementById('kpi-grid').innerHTML = `
+    <div class="kpi-card"><div class="num">${activas.length}</div><div class="lbl">Recepciones activas</div></div>
+    ${ETAPAS_ACTIVAS.map(e=>`<div class="kpi-card"><div class="num">${porEtapa[e]}</div><div class="lbl">En ${e}</div></div>`).join('')}
+    <div class="kpi-card"><div class="num">${conDiferencia}</div><div class="lbl">Con diferencias</div></div>
+  `;
+  const tbody = document.getElementById('kpi-tbody');
+  tbody.innerHTML = activas.length ? activas.map(r=>`
+    <tr>
+      <td>${r.correlativo}</td>
+      <td>${escapeHtml(r.tipoIngreso)}</td>
+      <td>${escapeHtml(r.clienteAFV)}</td>
+      <td>${badgeEstado(r.estado)}</td>
+      <td>${escapeHtml(r.fechaRecepcion)}</td>
+      <td>${diasEnEstado(r)}</td>
+      <td>${r.tieneDiferencias ? '<span class="badge diferencia">Diferencia</span>' : '-'}</td>
+    </tr>`).join('') : `<tr><td colspan="7" class="empty">No hay recepciones activas</td></tr>`;
+}
+
+function accionesPorEtapa(rec){
+  const siguiente = SIGUIENTE_ETAPA[rec.estado];
+  const textoBtn = rec.estado==='Ingreso' ? 'Marcar guardado' : 'Avanzar a '+siguiente;
+  return `
+    <button class="btn" onclick="avanzarEtapaUI('${rec.id}','${siguiente}')">${textoBtn}</button>
+    <button class="btn secondary" onclick="abrirModalDiferencia('${rec.id}')">${rec.tieneDiferencias?'Ver diferencia':'Marcar diferencia'}</button>
+    <button class="btn secondary" onclick="abrirModalHistorial('${rec.id}')">Historial</button>
+  `;
+}
+function renderEtapaTab(etapa){
+  const selEl = document.querySelector(`.filtro-etapa[data-etapa="${etapa}"]`);
+  const filtro = selEl ? (selEl.value || 'Todos') : 'Todos';
+  const regs = recepcionesActivas().filter(r=> r.estado===etapa && (filtro==='Todos' || r.tipoIngreso===filtro));
+  const tbody = document.getElementById('tbody-'+etapa);
+  if(!tbody) return;
+  tbody.innerHTML = regs.length ? regs.map(r=>`
+    <tr>
+      <td>${r.correlativo}</td>
+      <td>${escapeHtml(r.tipoIngreso)}</td>
+      <td>${escapeHtml(r.clienteAFV)}</td>
+      <td>${escapeHtml(r.nDocumento)} (${escapeHtml(r.tipoDocumento)})</td>
+      <td>${r.cantidad}</td>
+      <td>${diasEnEstado(r)}</td>
+      <td>${r.tieneDiferencias ? '<span class="badge diferencia">Diferencia</span>' : '-'}</td>
+      <td>${accionesPorEtapa(r)}</td>
+    </tr>`).join('') : `<tr><td colspan="8" class="empty">No hay recepciones en esta etapa</td></tr>`;
+}
+
+function renderHistorial(){
+  const filtro = document.getElementById('filtro-historial').value || 'Todos';
+  const regs = appData.recepciones.filter(r=> r.archivada && (filtro==='Todos' || r.tipoIngreso===filtro))
+    .sort((a,b)=> new Date(b.timestamps['Guardado']) - new Date(a.timestamps['Guardado']));
+  const tbody = document.getElementById('tbody-historial');
+  tbody.innerHTML = regs.length ? regs.map(r=>`
+    <tr>
+      <td>${r.correlativo}</td>
+      <td>${escapeHtml(r.tipoIngreso)}</td>
+      <td>${escapeHtml(r.clienteAFV)}</td>
+      <td>${escapeHtml(r.fechaRecepcion)}</td>
+      <td>${fmtFecha(r.timestamps['Guardado'])}</td>
+      <td>${r.tieneDiferencias ? '<span class="badge diferencia">Diferencia</span>' : '-'}</td>
+      <td><button class="btn secondary" onclick="abrirModalHistorial('${r.id}')">Ver</button></td>
+    </tr>`).join('') : `<tr><td colspan="7" class="empty">Aún no hay recepciones completadas</td></tr>`;
+}
+
+function renderAdmin(){
+  document.getElementById('lista-clientesAFV').innerHTML = appData.catalogos.clientesAFV.map(c=>`<span class="tag">${escapeHtml(c)}</span>`).join('') || '<span class="empty">Sin clientes cargados</span>';
+  document.getElementById('lista-proveedoresAdmin').innerHTML = appData.catalogos.proveedores.map(p=>`<span class="tag">${escapeHtml(p)}</span>`).join('') || '<span class="empty">Sin proveedores cargados</span>';
+}
+
+function renderEstadisticas(){
+  const todas = appData.recepciones;
+  // Tiempo promedio por etapa
+  const pares = [['Recepción','Revisión'],['Revisión','Ingreso'],['Ingreso','Guardado']];
+  let htmlTiempos = '';
+  pares.forEach(([a,b])=>{
+    const diffs = todas.filter(r=>r.timestamps[a] && r.timestamps[b])
+      .map(r=> (new Date(r.timestamps[b]) - new Date(r.timestamps[a]))/3600000);
+    const prom = diffs.length ? (diffs.reduce((s,x)=>s+x,0)/diffs.length) : 0;
+    htmlTiempos += `<div class="bar-row"><span style="width:140px">${a} → ${b}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.min(100, prom*4)}%"></div></div><span>${diffs.length? prom.toFixed(1)+' h' : 'Sin datos'}</span></div>`;
+  });
+  document.getElementById('stats-tiempos').innerHTML = htmlTiempos;
+
+  // Volumen por tipo de ingreso
+  const tipos = ['Fábrica','Importación','Devolución','Clientes AFV'];
+  const maxCant = Math.max(1, ...tipos.map(t=> todas.filter(r=>r.tipoIngreso===t).reduce((s,r)=>s+r.cantidad,0)));
+  document.getElementById('stats-volumen').innerHTML = tipos.map(t=>{
+    const regs = todas.filter(r=>r.tipoIngreso===t);
+    const cant = regs.reduce((s,r)=>s+r.cantidad,0);
+    return `<div class="bar-row"><span style="width:140px">${t}</span><div class="bar-track"><div class="bar-fill" style="width:${(cant/maxCant*100).toFixed(0)}%"></div></div><span>${regs.length} recepciones · ${cant} unid.</span></div>`;
+  }).join('');
+
+  // % con diferencias
+  const total = todas.length;
+  const conDif = todas.filter(r=>r.tieneDiferencias).length;
+  const pct = total ? (conDif/total*100) : 0;
+  let htmlDif = `<div class="bar-row"><span style="width:140px">Global</span><div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(0)}%;background:var(--danger)"></div></div><span>${pct.toFixed(1)}% (${conDif}/${total})</span></div>`;
+  tipos.forEach(t=>{
+    const regs = todas.filter(r=>r.tipoIngreso===t);
+    const dif = regs.filter(r=>r.tieneDiferencias).length;
+    const p = regs.length ? (dif/regs.length*100) : 0;
+    htmlDif += `<div class="bar-row"><span style="width:140px">${t}</span><div class="bar-track"><div class="bar-fill" style="width:${p.toFixed(0)}%;background:var(--danger)"></div></div><span>${regs.length? p.toFixed(1)+'%':'Sin datos'}</span></div>`;
+  });
+  document.getElementById('stats-diferencias').innerHTML = htmlDif;
+}
+
+// ============================================================
+// FORMULARIO CARGAR
+// ============================================================
+function submitCargar(ev){
+  ev.preventDefault();
+  const form = {
+    tipoIngreso: document.getElementById('f-tipoIngreso').value,
+    fechaRecepcion: document.getElementById('f-fechaRecepcion').value,
+    nDocumento: document.getElementById('f-nDocumento').value,
+    tipoDocumento: document.getElementById('f-tipoDocumento').value,
+    nacionalImportado: document.getElementById('f-nacionalImportado').value,
+    clienteAFV: document.getElementById('f-clienteAFV').value,
+    proveedorCliente: document.getElementById('f-proveedorCliente').value,
+    palletBulto: document.getElementById('f-palletBulto').value,
+    cantidad: document.getElementById('f-cantidad').value
+  };
+  crearRecepcion(form).then(()=>{
+    document.getElementById('form-cargar').reset();
+    switchTab('Recepción');
+  });
+  return false;
+}
+
+// ============================================================
+// MODALES
+// ============================================================
+function cerrarModal(){ document.getElementById('modal-root').innerHTML = ''; }
+function abrirModalHistorial(id){
+  const rec = appData.recepciones.find(r=>r.id===id);
+  if(!rec) return;
+  const items = rec.historial.map(h=>`<div class="hist-item"><div>${escapeHtml(h.accion)}${h.detalle? ' — '+escapeHtml(h.detalle):''}</div><div class="meta">${escapeHtml(h.usuario)} · ${fmtFecha(h.fecha)}</div></div>`).join('');
+  document.getElementById('modal-root').innerHTML = `
+    <div class="modal-bg" onclick="if(event.target===this) cerrarModal()">
+      <div class="modal">
+        <h3>Historial — N° ${rec.correlativo}</h3>
+        ${items || '<p class="empty">Sin movimientos</p>'}
+        <button class="btn secondary" onclick="cerrarModal()">Cerrar</button>
+      </div>
+    </div>`;
+}
+function abrirModalDiferencia(id){
+  const rec = appData.recepciones.find(r=>r.id===id);
+  if(!rec) return;
+  const fotosHtml = (rec.fotos||[]).map(f=>`<div><a href="${f.url}" target="_blank" rel="noopener">${escapeHtml(f.nombre)}</a></div>`).join('');
+  document.getElementById('modal-root').innerHTML = `
+    <div class="modal-bg" onclick="if(event.target===this) cerrarModal()">
+      <div class="modal">
+        <h3>Diferencia — N° ${rec.correlativo}</h3>
+        <label>Detalle</label>
+        <textarea id="m-detalle" rows="3">${escapeHtml(rec.detalleDiferencias)}</textarea>
+        <label>Fotos (obligatorio al menos 1 si hay diferencia)</label>
+        <input type="file" id="m-fotos" accept="image/*" multiple>
+        <div style="margin-top:8px">${fotosHtml}</div>
+        <div style="margin-top:14px">
+          <button class="btn" onclick="confirmarDiferencia('${rec.id}')">Guardar diferencia</button>
+          <button class="btn secondary" onclick="cerrarModal()">Cancelar</button>
+        </div>
+      </div>
+    </div>`;
+}
+function confirmarDiferencia(id){
+  const detalle = document.getElementById('m-detalle').value.trim();
+  const archivos = Array.from(document.getElementById('m-fotos').files || []);
+  guardarDiferenciaUI(id, detalle, archivos).then(cerrarModal);
+}
+</script>
+</body>
+</html>
