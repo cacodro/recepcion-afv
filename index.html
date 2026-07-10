@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Recepción AFV</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>%F0%9F%93%A6</text></svg>">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   :root{
@@ -39,6 +40,7 @@
   input,select,textarea{width:100%;padding:8px;border:1px solid var(--border);border-radius:4px;font-size:14px;}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
   .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+  .row4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;}
   button.btn{padding:8px 14px;border:none;border-radius:4px;background:var(--accent);color:#fff;cursor:pointer;font-size:13px;margin:2px 4px 2px 0;}
   button.btn.secondary{background:#e5e5e5;color:#222;}
   button.btn.danger{background:var(--danger);color:#fff;}
@@ -85,6 +87,7 @@
     <button data-tab="Recepción" onclick="switchTab('Recepción')">Recepción</button>
     <button data-tab="Revisión" onclick="switchTab('Revisión')">Revisión</button>
     <button data-tab="Ingreso" onclick="switchTab('Ingreso')">Ingreso</button>
+    <button data-tab="Guardado" onclick="switchTab('Guardado')">Guardado</button>
     <button data-tab="historial" onclick="switchTab('historial')">Historial</button>
     <button data-tab="admin" onclick="switchTab('admin')">Administración</button>
     <button data-tab="stats" onclick="switchTab('stats')">Estadísticas</button>
@@ -114,10 +117,8 @@
             <div>
               <label>Tipo de ingreso</label>
               <select id="f-tipoIngreso" required>
-                <option>Fábrica</option>
-                <option>Importación</option>
+                <option>Compra</option>
                 <option>Devolución</option>
-                <option>Clientes AFV</option>
               </select>
             </div>
             <div>
@@ -140,13 +141,13 @@
             </div>
             <div>
               <label>Nacional / Importado</label>
-              <select id="f-nacionalImportado" required>
+              <select id="f-nacionalImportado" required onchange="actualizarFormatoRecepcion()">
                 <option>Nacional</option>
                 <option>Importado</option>
               </select>
             </div>
           </div>
-          <div class="row3">
+          <div class="row4">
             <div>
               <label>Cliente AFV</label>
               <select id="f-clienteAFV" required></select>
@@ -157,11 +158,15 @@
               <datalist id="lista-proveedores"></datalist>
             </div>
             <div>
-              <label>Pallet o bulto</label>
-              <select id="f-palletBulto" required>
+              <label>Formato de recepción</label>
+              <select id="f-palletBulto" required onchange="actualizarTipoCarga()">
                 <option>Pallet</option>
                 <option>Bulto</option>
               </select>
+            </div>
+            <div id="grupo-tipoCarga" class="hidden">
+              <label>Tipo de carga</label>
+              <select id="f-tipoCarga" onchange="actualizarBloqueoCantidad()"></select>
             </div>
           </div>
           <div class="row2">
@@ -217,6 +222,20 @@
       </table>
     </section>
 
+    <section id="tab-Guardado" class="tab etapa-tab" data-etapa="Guardado">
+      <div class="filtro-row">
+        <label style="margin:0">Filtrar por tipo:
+          <select class="filtro-etapa" data-etapa="Guardado" onchange="renderGuardadoTab()">
+            <option value="Todos">Todos</option>
+          </select>
+        </label>
+      </div>
+      <table>
+        <thead><tr><th>N°</th><th>Tipo</th><th>Cliente AFV</th><th>Cant. ingresada</th><th>Tiempo en Guardado</th><th>Tomado por</th><th>Diferencia</th><th>Acciones</th></tr></thead>
+        <tbody id="tbody-Guardado"></tbody>
+      </table>
+    </section>
+
     <section id="tab-historial" class="tab">
       <div class="filtro-row">
         <label style="margin:0">Filtrar por tipo:
@@ -226,7 +245,7 @@
         </label>
       </div>
       <table>
-        <thead><tr><th>N°</th><th>Tipo</th><th>Cliente AFV</th><th>Fecha recepción</th><th>Guardado el</th><th>Diferencia</th><th></th></tr></thead>
+        <thead><tr><th>N°</th><th>Tipo</th><th>Cliente AFV</th><th>Fecha recepción</th><th>Finalizado el</th><th>Diferencia</th><th></th></tr></thead>
         <tbody id="tbody-historial"></tbody>
       </table>
     </section>
@@ -292,8 +311,9 @@ let appData = null;           // copia en memoria de los datos (para pintar la p
 let dataSnapshotAtLoad = null; // última copia confirmada que vino de Drive
 let syncTimer = null;
 let currentTab = 'kpis';
-const ETAPAS_ACTIVAS = ['Recepción','Revisión','Ingreso'];
-const SIGUIENTE_ETAPA = {'Recepción':'Revisión','Revisión':'Ingreso','Ingreso':'Guardado'};
+const ETAPAS_ACTIVAS = ['Recepción','Revisión','Ingreso','Guardado'];
+const ETAPAS_TABLA_GENERICA = ['Recepción','Revisión','Ingreso'];
+const SIGUIENTE_ETAPA = {'Recepción':'Revisión','Revisión':'Ingreso'};
 
 // ============================================================
 // UTILIDADES
@@ -488,13 +508,16 @@ function crearRecepcion(form){
       nacionalImportado: form.nacionalImportado,
       clienteAFV: form.clienteAFV,
       proveedorCliente: form.proveedorCliente,
-      palletBulto: form.palletBulto,
+      formatoRecepcion: form.formatoRecepcion,
+      tipoCarga: form.tipoCarga || '',
       cantidad: Number(form.cantidad)||0,
+      cantidadIngresada: null,
+      tomadoPor: null,
       tieneDiferencias: false,
       detalleDiferencias: '',
       fotos: [],
       archivada: false,
-      timestamps: { 'Recepción': nowIso(), 'Revisión': null, 'Ingreso': null, 'Guardado': null },
+      timestamps: { 'Recepción': nowIso(), 'Revisión': null, 'Ingreso': null, 'Guardado': null, 'Finalizado': null },
       historial: [{ fecha: nowIso(), usuario: currentUser.email, accion:'Creado', detalle:`Recepción N° ${fresh.correlativoActual} cargada (${form.tipoIngreso})` }]
     };
     fresh.recepciones.push(rec);
@@ -511,6 +534,46 @@ function avanzarEtapaUI(id, destino){
     rec.timestamps[destino] = nowIso();
     if(destino==='Guardado') rec.archivada = true;
     rec.historial.push({ fecha: nowIso(), usuario: currentUser.email, accion:`Avanzó a ${destino}`, detalle:'' });
+  });
+}
+function confirmarIngresoUI(id){
+  const val = Number(document.getElementById('m-cantidad-ingresada').value);
+  return guardarConCambio(fresh=>{
+    const rec = fresh.recepciones.find(r=>r.id===id);
+    if(!rec) throw new Error('Este registro ya no existe o fue modificado. Refresca la página.');
+    if(rec.tieneDiferencias && (!rec.fotos || rec.fotos.length===0)){
+      throw new Error('Este registro tiene diferencias marcadas: adjunta al menos una foto antes de avanzar de etapa.');
+    }
+    rec.cantidadIngresada = val;
+    rec.estado = 'Guardado';
+    rec.timestamps['Guardado'] = nowIso();
+    rec.historial.push({ fecha: nowIso(), usuario: currentUser.email, accion:'Avanzó a Guardado', detalle:`Cantidad ingresada al sistema: ${val}` });
+  }).then(cerrarModal);
+}
+function tomarGuardadoUI(id){
+  return guardarConCambio(fresh=>{
+    const rec = fresh.recepciones.find(r=>r.id===id);
+    if(!rec) throw new Error('Este registro ya no existe. Refresca la página.');
+    if(rec.tomadoPor) throw new Error('Ya fue tomado por '+rec.tomadoPor+'.');
+    rec.tomadoPor = currentUser.email;
+    rec.historial.push({ fecha: nowIso(), usuario: currentUser.email, accion:'Tomó para guardar', detalle:'' });
+  });
+}
+function pausarGuardadoUI(id){
+  return guardarConCambio(fresh=>{
+    const rec = fresh.recepciones.find(r=>r.id===id);
+    if(!rec) throw new Error('Este registro ya no existe. Refresca la página.');
+    rec.tomadoPor = null;
+    rec.historial.push({ fecha: nowIso(), usuario: currentUser.email, accion:'Pausó el guardado', detalle:'Queda disponible para que alguien la tome de nuevo' });
+  });
+}
+function finalizarGuardadoUI(id){
+  return guardarConCambio(fresh=>{
+    const rec = fresh.recepciones.find(r=>r.id===id);
+    if(!rec) throw new Error('Este registro ya no existe. Refresca la página.');
+    rec.archivada = true;
+    rec.timestamps['Finalizado'] = nowIso();
+    rec.historial.push({ fecha: nowIso(), usuario: currentUser.email, accion:'Finalizado', detalle:'' });
   });
 }
 async function guardarDiferenciaUI(id, detalle, archivos){
@@ -562,7 +625,7 @@ function switchTab(tab){
 // RENDER
 // ============================================================
 function poblarFiltrosTipo(){
-  const tipos = ['Todos','Fábrica','Importación','Devolución','Clientes AFV'];
+  const tipos = ['Todos','Compra','Devolución'];
   document.querySelectorAll('#filtro-kpis, .filtro-etapa, #filtro-historial').forEach(sel=>{
     const actual = sel.value || 'Todos';
     sel.innerHTML = tipos.map(t=>`<option value="${t}">${t}</option>`).join('');
@@ -586,7 +649,8 @@ function renderAll(){
   poblarFiltrosTipo();
   poblarCatalogosForm();
   renderKPIs();
-  ETAPAS_ACTIVAS.forEach(renderEtapaTab);
+  ETAPAS_TABLA_GENERICA.forEach(renderEtapaTab);
+  renderGuardadoTab();
   renderHistorial();
   renderAdmin();
   renderEstadisticas();
@@ -617,13 +681,41 @@ function renderKPIs(){
 }
 
 function accionesPorEtapa(rec){
-  const siguiente = SIGUIENTE_ETAPA[rec.estado];
-  const textoBtn = rec.estado==='Ingreso' ? 'Marcar guardado' : 'Avanzar a '+siguiente;
-  return `
-    <button class="btn" onclick="avanzarEtapaUI('${rec.id}','${siguiente}')">${textoBtn}</button>
-    <button class="btn secondary" onclick="abrirModalDiferencia('${rec.id}')">${rec.tieneDiferencias?'Ver diferencia':'Marcar diferencia'}</button>
-    <button class="btn secondary" onclick="abrirModalHistorial('${rec.id}')">Historial</button>
-  `;
+  let botones = '';
+  if(rec.estado === 'Ingreso'){
+    botones += `<button class="btn" onclick="abrirModalCantidadIngresada('${rec.id}')">Avanzar a Guardado</button>`;
+  } else if(rec.estado === 'Guardado'){
+    if(!rec.tomadoPor){
+      botones += `<button class="btn" onclick="tomarGuardadoUI('${rec.id}')">Tomar</button>`;
+    } else {
+      botones += `<button class="btn" onclick="finalizarGuardadoUI('${rec.id}')">Finalizar</button>`;
+      botones += `<button class="btn secondary" onclick="pausarGuardadoUI('${rec.id}')">Pausar</button>`;
+    }
+  } else {
+    const siguiente = SIGUIENTE_ETAPA[rec.estado];
+    botones += `<button class="btn" onclick="avanzarEtapaUI('${rec.id}','${siguiente}')">Avanzar a ${siguiente}</button>`;
+  }
+  botones += `<button class="btn secondary" onclick="abrirModalDiferencia('${rec.id}')">${rec.tieneDiferencias?'Ver diferencia':'Marcar diferencia'}</button>`;
+  botones += `<button class="btn secondary" onclick="abrirModalHistorial('${rec.id}')">Historial</button>`;
+  return botones;
+}
+function renderGuardadoTab(){
+  const selEl = document.querySelector('.filtro-etapa[data-etapa="Guardado"]');
+  const filtro = selEl ? (selEl.value || 'Todos') : 'Todos';
+  const regs = recepcionesActivas().filter(r=> r.estado==='Guardado' && (filtro==='Todos' || r.tipoIngreso===filtro));
+  const tbody = document.getElementById('tbody-Guardado');
+  if(!tbody) return;
+  tbody.innerHTML = regs.length ? regs.map(r=>`
+    <tr>
+      <td>${r.correlativo}</td>
+      <td>${escapeHtml(r.tipoIngreso)}</td>
+      <td>${escapeHtml(r.clienteAFV)}</td>
+      <td>${r.cantidadIngresada ?? '-'}</td>
+      <td>${diasEnEstado(r)}</td>
+      <td>${r.tomadoPor ? escapeHtml(r.tomadoPor) : '<span class="empty" style="padding:0">Sin tomar</span>'}</td>
+      <td>${r.tieneDiferencias ? '<span class="badge diferencia">Diferencia</span>' : '-'}</td>
+      <td>${accionesPorEtapa(r)}</td>
+    </tr>`).join('') : `<tr><td colspan="8" class="empty">No hay recepciones en Guardado</td></tr>`;
 }
 function renderEtapaTab(etapa){
   const selEl = document.querySelector(`.filtro-etapa[data-etapa="${etapa}"]`);
@@ -647,7 +739,7 @@ function renderEtapaTab(etapa){
 function renderHistorial(){
   const filtro = document.getElementById('filtro-historial').value || 'Todos';
   const regs = appData.recepciones.filter(r=> r.archivada && (filtro==='Todos' || r.tipoIngreso===filtro))
-    .sort((a,b)=> new Date(b.timestamps['Guardado']) - new Date(a.timestamps['Guardado']));
+    .sort((a,b)=> new Date(b.timestamps['Finalizado']) - new Date(a.timestamps['Finalizado']));
   const tbody = document.getElementById('tbody-historial');
   tbody.innerHTML = regs.length ? regs.map(r=>`
     <tr>
@@ -655,21 +747,37 @@ function renderHistorial(){
       <td>${escapeHtml(r.tipoIngreso)}</td>
       <td>${escapeHtml(r.clienteAFV)}</td>
       <td>${escapeHtml(r.fechaRecepcion)}</td>
-      <td>${fmtFecha(r.timestamps['Guardado'])}</td>
+      <td>${fmtFecha(r.timestamps['Finalizado'])}</td>
       <td>${r.tieneDiferencias ? '<span class="badge diferencia">Diferencia</span>' : '-'}</td>
       <td><button class="btn secondary" onclick="abrirModalHistorial('${r.id}')">Ver</button></td>
     </tr>`).join('') : `<tr><td colspan="7" class="empty">Aún no hay recepciones completadas</td></tr>`;
 }
 
 function renderAdmin(){
-  document.getElementById('lista-clientesAFV').innerHTML = appData.catalogos.clientesAFV.map(c=>`<span class="tag">${escapeHtml(c)}</span>`).join('') || '<span class="empty">Sin clientes cargados</span>';
-  document.getElementById('lista-proveedoresAdmin').innerHTML = appData.catalogos.proveedores.map(p=>`<span class="tag">${escapeHtml(p)}</span>`).join('') || '<span class="empty">Sin proveedores cargados</span>';
+  const elCli = document.getElementById('lista-clientesAFV');
+  elCli.innerHTML = appData.catalogos.clientesAFV.map((c,i)=>`<span class="tag">${escapeHtml(c)} <span class="tag-x" data-tipo="cliente" data-idx="${i}" style="cursor:pointer;color:var(--danger);font-weight:700">×</span></span>`).join('') || '<span class="empty">Sin clientes cargados</span>';
+  const elProv = document.getElementById('lista-proveedoresAdmin');
+  elProv.innerHTML = appData.catalogos.proveedores.map((p,i)=>`<span class="tag">${escapeHtml(p)} <span class="tag-x" data-tipo="proveedor" data-idx="${i}" style="cursor:pointer;color:var(--danger);font-weight:700">×</span></span>`).join('') || '<span class="empty">Sin proveedores cargados</span>';
+  document.querySelectorAll('#lista-clientesAFV .tag-x, #lista-proveedoresAdmin .tag-x').forEach(el=>{
+    el.onclick = () => {
+      const idx = Number(el.dataset.idx);
+      if(el.dataset.tipo==='cliente') eliminarClienteAFVUI(idx); else eliminarProveedorUI(idx);
+    };
+  });
+}
+function eliminarClienteAFVUI(idx){
+  if(!confirm('¿Quitar este cliente AFV del catálogo?')) return;
+  guardarConCambio(fresh=>{ fresh.catalogos.clientesAFV.splice(idx,1); });
+}
+function eliminarProveedorUI(idx){
+  if(!confirm('¿Quitar este proveedor del catálogo?')) return;
+  guardarConCambio(fresh=>{ fresh.catalogos.proveedores.splice(idx,1); });
 }
 
 function renderEstadisticas(){
   const todas = appData.recepciones;
   // Tiempo promedio por etapa
-  const pares = [['Recepción','Revisión'],['Revisión','Ingreso'],['Ingreso','Guardado']];
+  const pares = [['Recepción','Revisión'],['Revisión','Ingreso'],['Ingreso','Guardado'],['Guardado','Finalizado']];
   let htmlTiempos = '';
   pares.forEach(([a,b])=>{
     const diffs = todas.filter(r=>r.timestamps[a] && r.timestamps[b])
@@ -680,7 +788,7 @@ function renderEstadisticas(){
   document.getElementById('stats-tiempos').innerHTML = htmlTiempos;
 
   // Volumen por tipo de ingreso
-  const tipos = ['Fábrica','Importación','Devolución','Clientes AFV'];
+  const tipos = ['Compra','Devolución'];
   const maxCant = Math.max(1, ...tipos.map(t=> todas.filter(r=>r.tipoIngreso===t).reduce((s,r)=>s+r.cantidad,0)));
   document.getElementById('stats-volumen').innerHTML = tipos.map(t=>{
     const regs = todas.filter(r=>r.tipoIngreso===t);
@@ -703,8 +811,44 @@ function renderEstadisticas(){
 }
 
 // ============================================================
-// FORMULARIO CARGAR
+// FORMULARIO CARGAR — formato de recepción dinámico según Nacional/Importado
 // ============================================================
+function actualizarFormatoRecepcion(){
+  const val = document.getElementById('f-nacionalImportado').value;
+  const sel = document.getElementById('f-palletBulto');
+  const opciones = val === 'Importado' ? ["Contenedor de 20'","Contenedor de 40'","Rampla"] : ['Pallet','Bulto'];
+  sel.innerHTML = opciones.map(o=>`<option>${o}</option>`).join('');
+  actualizarTipoCarga();
+}
+function actualizarTipoCarga(){
+  const nacImp = document.getElementById('f-nacionalImportado').value;
+  const grupo = document.getElementById('grupo-tipoCarga');
+  const selTipo = document.getElementById('f-tipoCarga');
+  if(nacImp !== 'Importado'){
+    grupo.classList.add('hidden');
+    selTipo.innerHTML = '';
+    return;
+  }
+  grupo.classList.remove('hidden');
+  const formato = document.getElementById('f-palletBulto').value;
+  const opciones = formato === 'Rampla' ? ['Pallet'] : ['Piso','Pallet'];
+  selTipo.innerHTML = opciones.map(o=>`<option>${o}</option>`).join('');
+  actualizarBloqueoCantidad();
+}
+function actualizarBloqueoCantidad(){
+  const nacImp = document.getElementById('f-nacionalImportado').value;
+  const tipoCarga = document.getElementById('f-tipoCarga').value;
+  const inputCantidad = document.getElementById('f-cantidad');
+  const bloquear = nacImp === 'Importado' && tipoCarga === 'Piso';
+  inputCantidad.disabled = bloquear;
+  inputCantidad.required = !bloquear;
+  if(bloquear){
+    inputCantidad.value = '';
+    inputCantidad.placeholder = 'Se define al ingresar al sistema';
+  } else {
+    inputCantidad.placeholder = '';
+  }
+}
 function submitCargar(ev){
   ev.preventDefault();
   const form = {
@@ -715,11 +859,13 @@ function submitCargar(ev){
     nacionalImportado: document.getElementById('f-nacionalImportado').value,
     clienteAFV: document.getElementById('f-clienteAFV').value,
     proveedorCliente: document.getElementById('f-proveedorCliente').value,
-    palletBulto: document.getElementById('f-palletBulto').value,
+    formatoRecepcion: document.getElementById('f-palletBulto').value,
+    tipoCarga: document.getElementById('f-nacionalImportado').value==='Importado' ? document.getElementById('f-tipoCarga').value : '',
     cantidad: document.getElementById('f-cantidad').value
   };
   crearRecepcion(form).then(()=>{
     document.getElementById('form-cargar').reset();
+    actualizarFormatoRecepcion();
     switchTab('Recepción');
   });
   return false;
@@ -729,6 +875,24 @@ function submitCargar(ev){
 // MODALES
 // ============================================================
 function cerrarModal(){ document.getElementById('modal-root').innerHTML = ''; }
+function abrirModalCantidadIngresada(id){
+  const rec = appData.recepciones.find(r=>r.id===id);
+  if(!rec) return;
+  document.getElementById('modal-root').innerHTML = `
+    <div class="modal-bg" onclick="if(event.target===this) cerrarModal()">
+      <div class="modal">
+        <h3>Ingreso al sistema — N° ${rec.correlativo}</h3>
+        <label>Cantidad declarada al cargar</label>
+        <input type="text" value="${rec.cantidad ? rec.cantidad : 'No declarada (carga a piso)'}" disabled>
+        <label>Cantidad de unidades ingresadas al sistema</label>
+        <input type="number" id="m-cantidad-ingresada" min="0" value="${rec.cantidad || ''}">
+        <div style="margin-top:14px">
+          <button class="btn" onclick="confirmarIngresoUI('${rec.id}')">Confirmar y avanzar a Guardado</button>
+          <button class="btn secondary" onclick="cerrarModal()">Cancelar</button>
+        </div>
+      </div>
+    </div>`;
+}
 function abrirModalHistorial(id){
   const rec = appData.recepciones.find(r=>r.id===id);
   if(!rec) return;
