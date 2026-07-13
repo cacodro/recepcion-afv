@@ -6,6 +6,7 @@
 <title>Recepción AFV</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>%F0%9F%93%A6</text></svg>">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   :root{
     --bg:#f5f5f4; --card:#fff; --border:#ddd; --text:#222; --muted:#666;
@@ -270,6 +271,14 @@
     </section>
 
     <section id="tab-stats" class="tab">
+      <div class="card">
+        <div class="filtro-row">
+          <label style="margin:0">Desde: <input type="date" id="excel-desde" style="width:auto"></label>
+          <label style="margin:0">Hasta: <input type="date" id="excel-hasta" style="width:auto"></label>
+        </div>
+        <p class="sync-status">Filtra por fecha de carga. Si dejas los campos vacíos, descarga todo.</p>
+        <button class="btn" onclick="descargarExcelUI()">Descargar Excel</button>
+      </div>
       <div class="card">
         <h3>Tiempo promedio por etapa</h3>
         <div id="stats-tiempos"></div>
@@ -810,6 +819,39 @@ function renderEstadisticas(){
   document.getElementById('stats-diferencias').innerHTML = htmlDif;
 }
 
+function descargarExcelUI(){
+  if(!appData || !appData.recepciones.length){ alert('No hay recepciones cargadas todavía.'); return; }
+  const desde = document.getElementById('excel-desde').value;
+  const hasta = document.getElementById('excel-hasta').value;
+  let recs = appData.recepciones;
+  if(desde) recs = recs.filter(r=> r.fechaRecepcion && r.fechaRecepcion >= desde);
+  if(hasta) recs = recs.filter(r=> r.fechaRecepcion && r.fechaRecepcion <= hasta);
+  if(!recs.length){ alert('No hay recepciones en ese rango de fechas.'); return; }
+  const filas = recs.map(r=>{
+    const inicioTs = r.timestamps['Recepción'] ? new Date(r.timestamps['Recepción']) : null;
+    const finTs = r.timestamps['Finalizado'] ? new Date(r.timestamps['Finalizado']) : new Date();
+    const dias = inicioTs ? Number(((finTs - inicioTs)/86400000).toFixed(1)) : '';
+    return {
+      'Cliente': r.clienteAFV || '',
+      'N° doc': r.nDocumento || '',
+      'Tipo doc': r.tipoDocumento || '',
+      'Unidades ingresadas': r.cantidadIngresada ?? '',
+      'Fecha de carga': r.fechaRecepcion || '',
+      'Proveedor': r.proveedorCliente || '',
+      'Origen': r.nacionalImportado || '',
+      'Formato de recepción': r.formatoRecepcion || '',
+      'Tipo de carga': r.tipoCarga || '',
+      'Estado': r.archivada ? 'Finalizada' : 'Activa',
+      'Días tardados por recepción': dias
+    };
+  });
+  const ws = XLSX.utils.json_to_sheet(filas);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Recepciones');
+  const fecha = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `recepciones_afv_${fecha}.xlsx`);
+}
+
 // ============================================================
 // FORMULARIO CARGAR — formato de recepción dinámico según Nacional/Importado
 // ============================================================
@@ -827,6 +869,7 @@ function actualizarTipoCarga(){
   if(nacImp !== 'Importado'){
     grupo.classList.add('hidden');
     selTipo.innerHTML = '';
+    actualizarBloqueoCantidad();
     return;
   }
   grupo.classList.remove('hidden');
