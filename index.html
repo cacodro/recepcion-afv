@@ -521,6 +521,7 @@ function crearRecepcion(form){
       tipoCarga: form.tipoCarga || '',
       cantidad: Number(form.cantidad)||0,
       cantidadIngresada: null,
+      ingresoCompleto: null,
       tomadoPor: null,
       tieneDiferencias: false,
       detalleDiferencias: '',
@@ -547,16 +548,21 @@ function avanzarEtapaUI(id, destino){
 }
 function confirmarIngresoUI(id){
   const val = Number(document.getElementById('m-cantidad-ingresada').value);
+  const esParcial = document.getElementById('m-tipo-entrada').value === 'parcial';
   return guardarConCambio(fresh=>{
     const rec = fresh.recepciones.find(r=>r.id===id);
     if(!rec) throw new Error('Este registro ya no existe o fue modificado. Refresca la página.');
     if(rec.tieneDiferencias && (!rec.fotos || rec.fotos.length===0)){
       throw new Error('Este registro tiene diferencias marcadas: adjunta al menos una foto antes de avanzar de etapa.');
     }
-    rec.cantidadIngresada = val;
-    rec.estado = 'Guardado';
-    rec.timestamps['Guardado'] = nowIso();
-    rec.historial.push({ fecha: nowIso(), usuario: currentUser.email, accion:'Avanzó a Guardado', detalle:`Cantidad ingresada al sistema: ${val}` });
+    const acumulado = (rec.cantidadIngresada || 0) + val;
+    rec.cantidadIngresada = acumulado;
+    rec.ingresoCompleto = !esParcial;
+    if(rec.estado !== 'Guardado'){
+      rec.estado = 'Guardado';
+      rec.timestamps['Guardado'] = nowIso();
+    }
+    rec.historial.push({ fecha: nowIso(), usuario: currentUser.email, accion: esParcial ? 'Ingreso parcial' : 'Ingreso completo', detalle:`${val} unidades esta entrada (acumulado: ${acumulado})` });
   }).then(cerrarModal);
 }
 function tomarGuardadoUI(id){
@@ -580,6 +586,7 @@ function finalizarGuardadoUI(id){
   return guardarConCambio(fresh=>{
     const rec = fresh.recepciones.find(r=>r.id===id);
     if(!rec) throw new Error('Este registro ya no existe. Refresca la página.');
+    if(rec.ingresoCompleto === false) throw new Error('Este registro tiene un ingreso parcial: agrega las unidades que faltan antes de finalizar.');
     rec.archivada = true;
     rec.timestamps['Finalizado'] = nowIso();
     rec.historial.push({ fecha: nowIso(), usuario: currentUser.email, accion:'Finalizado', detalle:'' });
@@ -696,6 +703,9 @@ function accionesPorEtapa(rec){
   } else if(rec.estado === 'Guardado'){
     if(!rec.tomadoPor){
       botones += `<button class="btn" onclick="tomarGuardadoUI('${rec.id}')">Tomar</button>`;
+    } else if(rec.ingresoCompleto === false){
+      botones += `<button class="btn" onclick="abrirModalCantidadIngresada('${rec.id}')">Agregar más unidades</button>`;
+      botones += `<button class="btn secondary" onclick="pausarGuardadoUI('${rec.id}')">Pausar</button>`;
     } else {
       botones += `<button class="btn" onclick="finalizarGuardadoUI('${rec.id}')">Finalizar</button>`;
       botones += `<button class="btn secondary" onclick="pausarGuardadoUI('${rec.id}')">Pausar</button>`;
@@ -703,6 +713,10 @@ function accionesPorEtapa(rec){
   } else {
     const siguiente = SIGUIENTE_ETAPA[rec.estado];
     botones += `<button class="btn" onclick="avanzarEtapaUI('${rec.id}','${siguiente}')">Avanzar a ${siguiente}</button>`;
+  }
+  if(rec.estado === 'Recepción'){
+    botones += `<button class="btn secondary" title="Editar" onclick="abrirModalEditarRecepcion('${rec.id}')">✏️</button>`;
+    botones += `<button class="btn secondary" title="Eliminar" onclick="eliminarRecepcionUI('${rec.id}')">✕</button>`;
   }
   botones += `<button class="btn secondary" onclick="abrirModalDiferencia('${rec.id}')">${rec.tieneDiferencias?'Ver diferencia':'Marcar diferencia'}</button>`;
   botones += `<button class="btn secondary" onclick="abrirModalHistorial('${rec.id}')">Historial</button>`;
@@ -719,7 +733,7 @@ function renderGuardadoTab(){
       <td>${r.correlativo}</td>
       <td>${escapeHtml(r.tipoIngreso)}</td>
       <td>${escapeHtml(r.clienteAFV)}</td>
-      <td>${r.cantidadIngresada ?? '-'}</td>
+      <td>${r.cantidadIngresada ?? '-'}${r.ingresoCompleto===false ? ' <span class="badge diferencia">Parcial</span>' : ''}</td>
       <td>${diasEnEstado(r)}</td>
       <td>${r.tomadoPor ? escapeHtml(r.tomadoPor) : '<span class="empty" style="padding:0">Sin tomar</span>'}</td>
       <td>${r.tieneDiferencias ? '<span class="badge diferencia">Diferencia</span>' : '-'}</td>
@@ -918,19 +932,165 @@ function submitCargar(ev){
 // MODALES
 // ============================================================
 function cerrarModal(){ document.getElementById('modal-root').innerHTML = ''; }
+function eliminarRecepcionUI(id){
+  if(!confirm('¿Eliminar esta recepción? Esta acción no se puede deshacer.')) return;
+  guardarConCambio(fresh=>{
+    fresh.recepciones = fresh.recepciones.filter(r=>r.id!==id);
+  });
+}
+function abrirModalEditarRecepcion(id){
+  const rec = appData.recepciones.find(r=>r.id===id);
+  if(!rec) return;
+  document.getElementById('modal-root').innerHTML = `
+    <div class="modal-bg" onclick="if(event.target===this) cerrarModal()">
+      <div class="modal" style="max-width:560px">
+        <h3>Editar recepción — N° ${rec.correlativo}</h3>
+        <div class="row2">
+          <div>
+            <label>Tipo de ingreso</label>
+            <select id="em-tipoIngreso">
+              <option ${rec.tipoIngreso==='Compra'?'selected':''}>Compra</option>
+              <option ${rec.tipoIngreso==='Devolución'?'selected':''}>Devolución</option>
+            </select>
+          </div>
+          <div>
+            <label>Fecha de recepción</label>
+            <input type="date" id="em-fechaRecepcion" value="${rec.fechaRecepcion||''}">
+          </div>
+        </div>
+        <div class="row3">
+          <div>
+            <label>N° de documento</label>
+            <input type="text" id="em-nDocumento" value="${escapeHtml(rec.nDocumento)}">
+          </div>
+          <div>
+            <label>Tipo de documento</label>
+            <select id="em-tipoDocumento">
+              <option ${rec.tipoDocumento==='Guía de despacho'?'selected':''}>Guía de despacho</option>
+              <option ${rec.tipoDocumento==='Factura'?'selected':''}>Factura</option>
+              <option ${rec.tipoDocumento==='Packing list'?'selected':''}>Packing list</option>
+            </select>
+          </div>
+          <div>
+            <label>Nacional / Importado</label>
+            <select id="em-nacionalImportado" onchange="actualizarFormatoRecepcionEdit()">
+              <option ${rec.nacionalImportado==='Nacional'?'selected':''}>Nacional</option>
+              <option ${rec.nacionalImportado==='Importado'?'selected':''}>Importado</option>
+            </select>
+          </div>
+        </div>
+        <div class="row4">
+          <div>
+            <label>Cliente AFV</label>
+            <select id="em-clienteAFV">${appData.catalogos.clientesAFV.map(c=>`<option ${c===rec.clienteAFV?'selected':''}>${escapeHtml(c)}</option>`).join('')}</select>
+          </div>
+          <div>
+            <label>Proveedor del cliente</label>
+            <input type="text" id="em-proveedorCliente" value="${escapeHtml(rec.proveedorCliente)}">
+          </div>
+          <div>
+            <label>Formato de recepción</label>
+            <select id="em-formatoRecepcion" onchange="actualizarTipoCargaEdit()"></select>
+          </div>
+          <div id="em-grupo-tipoCarga" class="hidden">
+            <label>Tipo de carga</label>
+            <select id="em-tipoCarga" onchange="actualizarBloqueoCantidadEdit()"></select>
+          </div>
+        </div>
+        <div class="row2">
+          <div>
+            <label>Cantidad</label>
+            <input type="number" id="em-cantidad" min="1" value="${rec.cantidad||''}">
+          </div>
+        </div>
+        <div style="margin-top:14px">
+          <button class="btn" onclick="guardarEdicionRecepcionUI('${rec.id}')">Guardar cambios</button>
+          <button class="btn secondary" onclick="cerrarModal()">Cancelar</button>
+        </div>
+      </div>
+    </div>`;
+  actualizarFormatoRecepcionEdit(rec.formatoRecepcion, rec.tipoCarga);
+}
+function actualizarFormatoRecepcionEdit(preFormato, preTipoCarga){
+  const nacImp = document.getElementById('em-nacionalImportado').value;
+  const sel = document.getElementById('em-formatoRecepcion');
+  const opciones = nacImp === 'Importado' ? ["Contenedor de 20'","Contenedor de 40'","Rampla"] : ['Pallet','Bulto'];
+  sel.innerHTML = opciones.map(o=>`<option ${o===preFormato?'selected':''}>${o}</option>`).join('');
+  actualizarTipoCargaEdit(preTipoCarga);
+}
+function actualizarTipoCargaEdit(preTipoCarga){
+  const nacImp = document.getElementById('em-nacionalImportado').value;
+  const grupo = document.getElementById('em-grupo-tipoCarga');
+  const selTipo = document.getElementById('em-tipoCarga');
+  if(nacImp !== 'Importado'){
+    grupo.classList.add('hidden');
+    selTipo.innerHTML = '';
+    actualizarBloqueoCantidadEdit();
+    return;
+  }
+  grupo.classList.remove('hidden');
+  const formato = document.getElementById('em-formatoRecepcion').value;
+  const opciones = formato === 'Rampla' ? ['Pallet'] : ['Piso','Pallet'];
+  selTipo.innerHTML = opciones.map(o=>`<option ${o===preTipoCarga?'selected':''}>${o}</option>`).join('');
+  actualizarBloqueoCantidadEdit();
+}
+function actualizarBloqueoCantidadEdit(){
+  const nacImp = document.getElementById('em-nacionalImportado').value;
+  const tipoCarga = document.getElementById('em-tipoCarga').value;
+  const inputCantidad = document.getElementById('em-cantidad');
+  const bloquear = nacImp === 'Importado' && tipoCarga === 'Piso';
+  inputCantidad.disabled = bloquear;
+  if(bloquear) inputCantidad.value = '';
+}
+function guardarEdicionRecepcionUI(id){
+  const form = {
+    tipoIngreso: document.getElementById('em-tipoIngreso').value,
+    fechaRecepcion: document.getElementById('em-fechaRecepcion').value,
+    nDocumento: document.getElementById('em-nDocumento').value,
+    tipoDocumento: document.getElementById('em-tipoDocumento').value,
+    nacionalImportado: document.getElementById('em-nacionalImportado').value,
+    clienteAFV: document.getElementById('em-clienteAFV').value,
+    proveedorCliente: document.getElementById('em-proveedorCliente').value,
+    formatoRecepcion: document.getElementById('em-formatoRecepcion').value,
+    tipoCarga: document.getElementById('em-nacionalImportado').value==='Importado' ? document.getElementById('em-tipoCarga').value : '',
+    cantidad: document.getElementById('em-cantidad').value
+  };
+  guardarConCambio(fresh=>{
+    const rec = fresh.recepciones.find(r=>r.id===id);
+    if(!rec) throw new Error('Este registro ya no existe. Refresca la página.');
+    rec.tipoIngreso = form.tipoIngreso;
+    rec.fechaRecepcion = form.fechaRecepcion;
+    rec.nDocumento = form.nDocumento;
+    rec.tipoDocumento = form.tipoDocumento;
+    rec.nacionalImportado = form.nacionalImportado;
+    rec.clienteAFV = form.clienteAFV;
+    rec.proveedorCliente = form.proveedorCliente;
+    rec.formatoRecepcion = form.formatoRecepcion;
+    rec.tipoCarga = form.tipoCarga;
+    rec.cantidad = Number(form.cantidad)||0;
+    rec.historial.push({ fecha: nowIso(), usuario: currentUser.email, accion:'Editado', detalle:'' });
+  }).then(cerrarModal);
+}
 function abrirModalCantidadIngresada(id){
   const rec = appData.recepciones.find(r=>r.id===id);
   if(!rec) return;
+  const yaIngresado = rec.cantidadIngresada || 0;
   document.getElementById('modal-root').innerHTML = `
     <div class="modal-bg" onclick="if(event.target===this) cerrarModal()">
       <div class="modal">
         <h3>Ingreso al sistema — N° ${rec.correlativo}</h3>
         <label>Cantidad declarada al cargar</label>
         <input type="text" value="${rec.cantidad ? rec.cantidad : 'No declarada (carga a piso)'}" disabled>
-        <label>Cantidad de unidades ingresadas al sistema</label>
-        <input type="number" id="m-cantidad-ingresada" min="0" value="${rec.cantidad || ''}">
+        ${yaIngresado ? `<p class="sync-status">Ya ingresado hasta ahora: ${yaIngresado} unidades</p>` : ''}
+        <label>Cantidad de esta entrada</label>
+        <input type="number" id="m-cantidad-ingresada" min="0" value="${yaIngresado ? '' : (rec.cantidad || '')}">
+        <label>¿Es el ingreso total o parcial?</label>
+        <select id="m-tipo-entrada">
+          <option value="total">Total (no falta nada más)</option>
+          <option value="parcial">Parcial (falta más por ingresar)</option>
+        </select>
         <div style="margin-top:14px">
-          <button class="btn" onclick="confirmarIngresoUI('${rec.id}')">Confirmar y avanzar a Guardado</button>
+          <button class="btn" onclick="confirmarIngresoUI('${rec.id}')">Confirmar</button>
           <button class="btn secondary" onclick="cerrarModal()">Cancelar</button>
         </div>
       </div>
